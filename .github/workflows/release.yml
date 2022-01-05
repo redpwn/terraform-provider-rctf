@@ -20,6 +20,8 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
       - uses: goreleaser/goreleaser-action@v2.8.0
+        with:
+          args: release
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GPG_FINGERPRINT: ${{ steps.gpg.outputs.fingerprint }}
