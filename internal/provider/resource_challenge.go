@@ -2,10 +2,10 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/redpwn/terraform-provider-rctf/internal/rctf"
-	"github.com/segmentio/ksuid"
 )
 
 func resourceChallenge() *schema.Resource {
@@ -20,7 +20,9 @@ func resourceChallenge() *schema.Resource {
 		Schema: map[string]*schema.Schema{
 			"id": {
 				Type:     schema.TypeString,
+				Optional: true,
 				Computed: true,
+				ForceNew: true,
 			},
 			"name": {
 				Type:     schema.TypeString,
@@ -83,13 +85,7 @@ func resourceChallenge() *schema.Resource {
 func resourceChallengePut(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	r := m.(*rctf.Client)
 	var diags diag.Diagnostics
-	id := d.Id()
-	if id == "" {
-		id = ksuid.New().String()
-		d.SetId(id)
-	}
 	c := rctf.Challenge{
-		Id:          id,
 		Name:        d.Get("name").(string),
 		Description: d.Get("description").(string),
 		Category:    d.Get("category").(string),
@@ -110,6 +106,14 @@ func resourceChallengePut(ctx context.Context, d *schema.ResourceData, m interfa
 			Url:  f["url"].(string),
 		})
 	}
+	c.Id = d.Id()
+	if c.Id == "" {
+		c.Id = d.Get("id").(string)
+	}
+	if c.Id == "" {
+		c.Id = fmt.Sprintf("%s-%s", c.Category, c.Name)
+	}
+	d.SetId(c.Id)
 	if err := r.PutChallenge(ctx, c); err != nil {
 		return diag.Errorf("put challenge: %s", err)
 	}
