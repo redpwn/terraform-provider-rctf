@@ -2,7 +2,6 @@ package rctf
 
 import (
 	"context"
-	"errors"
 	"net/url"
 )
 
@@ -48,21 +47,19 @@ func (c *Client) Challenge(ctx context.Context, id string) (Challenge, error) {
 		return Challenge{}, err
 	}
 	if res.Kind != "goodChallenges" {
-		return Challenge{}, errors.New(res.String())
+		return Challenge{}, res.err()
 	}
 	return res.Data, nil
 }
 
 func (c *Client) PutChallenge(ctx context.Context, challenge Challenge) error {
+	req := challengeRequest{Data: challenge}
 	res := response{}
-	req := challengeRequest{
-		Data: challenge,
-	}
 	if err := c.req(ctx, "PUT", challengeUrl(challenge.Id), &req, &res); err != nil {
 		return err
 	}
 	if res.Kind != "goodChallengeUpdate" {
-		return errors.New(res.String())
+		return res.err()
 	}
 	return nil
 }
@@ -73,7 +70,7 @@ func (c *Client) DeleteChallenge(ctx context.Context, id string) error {
 		return err
 	}
 	if res.Kind != "goodChallengeDelete" {
-		return errors.New(res.String())
+		return res.err()
 	}
 	return nil
 }

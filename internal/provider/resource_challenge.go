@@ -2,7 +2,10 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"regexp"
+
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/redpwn/terraform-provider-rctf/internal/rctf"
@@ -20,9 +23,7 @@ func resourceChallenge() *schema.Resource {
 		Schema: map[string]*schema.Schema{
 			"id": {
 				Type:     schema.TypeString,
-				Optional: true,
 				Computed: true,
-				ForceNew: true,
 			},
 			"name": {
 				Type:     schema.TypeString,
@@ -82,9 +83,10 @@ func resourceChallenge() *schema.Resource {
 	}
 }
 
-func resourceChallengePut(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+var idReg = regexp.MustCompile(`[^\w-]+`)
+
+func resourceChallengePut(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	r := m.(*rctf.Client)
-	var diags diag.Diagnostics
 	c := rctf.Challenge{
 		Name:        d.Get("name").(string),
 		Description: d.Get("description").(string),
@@ -108,80 +110,54 @@ func resourceChallengePut(ctx context.Context, d *schema.ResourceData, m interfa
 	}
 	c.Id = d.Id()
 	if c.Id == "" {
-		c.Id = d.Get("id").(string)
+		c.Id = idReg.ReplaceAllString(fmt.Sprintf("%s-%s", c.Category, c.Name), "-")
+		d.SetId(c.Id)
+		d.Set("id", c.Id)
 	}
-	if c.Id == "" {
-		c.Id = fmt.Sprintf("%s-%s", c.Category, c.Name)
-	}
-	d.SetId(c.Id)
 	if err := r.PutChallenge(ctx, c); err != nil {
 		return diag.Errorf("put challenge: %s", err)
 	}
-	diags = append(diags, resourceChallengeRead(ctx, d, m)...)
 	return diags
 }
 
-func flattenFiles(files []rctf.ChallengeFile) []map[string]interface{} {
+func resourceChallengeRead(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
+	r := m.(*rctf.Client)
+	id := d.Id()
+	c, err := r.Challenge(ctx, id)
+	if err != nil {
+		rctfErr := &rctf.Error{}
+		if errors.As(err, rctfErr) && rctfErr.Kind == "badChallenge" {
+			d.SetId("")
+			return
+		}
+		return diag.Errorf("get challenge: %s", err)
+	}
+	d.Set("id", c.Id)
+	d.Set("name", c.Name)
+	d.Set("description", c.Description)
+	d.Set("category", c.Category)
+	d.Set("author", c.Author)
 	var f []map[string]interface{}
-	for _, file := range files {
+	for _, file := range c.Files {
 		f = append(f, map[string]interface{}{
 			"name": file.Name,
 			"url":  file.Url,
 		})
 	}
-	return f
+	d.Set("file", f)
+	d.Set("min_points", c.Points.Min)
+	d.Set("max_points", c.Points.Max)
+	d.Set("flag", c.Flag)
+	d.Set("tiebreak_eligible", c.TiebreakEligible)
+	d.Set("sort_weight", c.SortWeight)
+	return
 }
 
-func resourceChallengeRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceChallengeDelete(ctx context.Context, d *schema.ResourceData, m interface{}) (diags diag.Diagnostics) {
 	r := m.(*rctf.Client)
-	var diags diag.Diagnostics
-	id := d.Id()
-	c, err := r.Challenge(ctx, id)
-	if err != nil {
-		return diag.Errorf("get challenge: %s", err)
-	}
-	if err := d.Set("id", c.Id); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("name", c.Name); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("description", c.Description); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("category", c.Category); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("author", c.Author); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("file", flattenFiles(c.Files)); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("min_points", c.Points.Min); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("max_points", c.Points.Max); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("flag", c.Flag); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("tiebreak_eligible", c.TiebreakEligible); err != nil {
-		return diag.FromErr(err)
-	}
-	if err := d.Set("sort_weight", c.SortWeight); err != nil {
-		return diag.FromErr(err)
-	}
-	return diags
-}
-
-func resourceChallengeDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	r := m.(*rctf.Client)
-	var diags diag.Diagnostics
 	id := d.Id()
 	if err := r.DeleteChallenge(ctx, id); err != nil {
 		return diag.Errorf("delete challenge: %s", err)
 	}
-	return diags
+	return
 }
